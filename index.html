@@ -239,6 +239,25 @@
         bottom-half task.
     </p>
 
+    <section id="failure">
+    <h2>Induced Failure</h2>
+
+    <h3>Removing the ISR Context Switch</h3>
+
+    <p>
+        The application can be used to demonstrate the effect of removing the
+        ISR-triggered context switch. The relevant statement is:
+    </p>
+
+    <pre><code>portYIELD_FROM_ISR(higher_woken);</code></pre>
+
+    <p>
+        When this operation is disabled, the ISR can still signal the waiting
+        task, but the higher-priority task is not immediately scheduled as part
+        of the ISR exit. This can increase the response latency of the
+        bottom-half task.
+    </p>
+
     <h3>Failure Result</h3>
 
     <p>
@@ -249,15 +268,16 @@
     </p>
 
     <div class="warning">
-       <strong>Measured failure result: 1187 µs</strong>
+        <strong>Measured failure result: 1187 µs</strong>
 
-<p>
-    With the ISR context-switch request disabled, the measured notification
-    latency increased to 1187 µs compared with 30 µs during normal operation.
-    This represents approximately a 39.6× increase in response latency.
-</p>
+        <p>
+            With the ISR context-switch request disabled, the measured
+            notification latency increased to 1187 µs compared with 30 µs
+            during normal operation. This represents approximately a 39.6×
+            increase in response latency.
+        </p>
+    </div>
 </section>
-
 
 <section id="reflection">
     <h2>Engineering Reflection</h2>
