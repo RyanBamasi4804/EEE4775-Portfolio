@@ -1,1 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+    <title>EEE 4775 - Application 3</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<header>
+    <h1>EEE 4775</h1>
+    <p>Application 3 — Real-Time Interrupt Response System</p>
+
+    <nav>
+        <a href="#overview">Overview</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#tasks">Task Table</a>
+        <a href="#results">Results</a>
+        <a href="#failure">Induced Failure</a>
+        <a href="#reflection">Reflection</a>
+    </nav>
+</header>
+
+
+<main>
+
+<section id="overview">
+    <h2>Application 3 Overview</h2>
+
+    <p>
+        Application 3 demonstrates an interrupt-driven real-time system using
+        an ESP32-S3 and FreeRTOS. A button press is treated as an asynchronous
+        spacecraft ground command. The GPIO interrupt service routine responds
+        to the event and signals FreeRTOS tasks to perform the bottom-half work.
+    </p>
+
+    <p>
+        The application demonstrates two methods of communicating from an ISR
+        to a task: a binary semaphore and a direct task notification. The
+        application also includes periodic background workloads that can be
+        used to study the effect of processor contention on response latency.
+    </p>
+
+    <div class="buttons">
+        <a href="https://wokwi.com/projects/468123070651717633"
+           target="_blank">
+            Open Wokwi Simulation
+        </a>
+    </div>
+</section>
+
+
+<section id="architecture">
+    <h2>System Architecture</h2>
+
+    <div class="architecture">
+
+        <div class="box">
+            <h3>Button / Ground Command</h3>
+            <p>GPIO 18</p>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="box isr">
+            <h3>GPIO ISR</h3>
+            <p>
+                Debounce → timestamp → ISR pulse →
+                semaphore + notification
+            </p>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="two-column">
+
+            <div class="box">
+                <h3>Binary Semaphore</h3>
+                <p>
+                    xSemaphoreGiveFromISR()
+                </p>
+                <p>
+                    ↓
+                </p>
+                <strong>btn_task_sem</strong>
+            </div>
+
+            <div class="box">
+                <h3>Direct Notification</h3>
+                <p>
+                    vTaskNotifyGiveFromISR()
+                </p>
+                <p>
+                    ↓
+                </p>
+                <strong>btn_task_notif</strong>
+            </div>
+
+        </div>
+
+    </div>
+
+    <h3>ISR Operation</h3>
+
+    <ol>
+        <li>Read the current time using <code>esp_timer_get_time()</code>.</li>
+        <li>Reject button edges occurring inside the debounce interval.</li>
+        <li>Set the ISR timing GPIO HIGH.</li>
+        <li>Record the ISR entry timestamp.</li>
+        <li>Increment the observed press counter.</li>
+        <li>Give the binary semaphore.</li>
+        <li>Send the direct task notification.</li>
+        <li>Set the ISR timing GPIO LOW before returning.</li>
+        <li>Optionally request a context switch when a higher-priority task was awakened.</li>
+    </ol>
+</section>
+
+
+<section id="tasks">
+    <h2>Task Table</h2>
+
+    <table>
+
+        <tr>
+            <th>Task</th>
+            <th>Priority</th>
+            <th>Period</th>
+            <th>Core</th>
+            <th>Function</th>
+        </tr>
+
+        <tr>
+            <td>btn_task_sem</td>
+            <td>12</td>
+            <td>Event-driven</td>
+            <td>Core 1</td>
+            <td>Binary semaphore bottom-half</td>
+        </tr>
+
+        <tr>
+            <td>btn_task_notif</td>
+            <td>12</td>
+            <td>Event-driven</td>
+            <td>Core 1</td>
+            <td>Direct notification bottom-half</td>
+        </tr>
+
+        <tr>
+            <td>load_task_a</td>
+            <td>15</td>
+            <td>10 ms</td>
+            <td>Core 1</td>
+            <td>Xorshift32 workload</td>
+        </tr>
+
+        <tr>
+            <td>load_task_b</td>
+            <td>10</td>
+            <td>20 ms</td>
+            <td>Core 1</td>
+            <td>Single-precision FIR workload</td>
+        </tr>
+
+        <tr>
+            <td>load_task_c</td>
+            <td>5</td>
+            <td>50 ms</td>
+            <td>Core 1</td>
+            <td>CRC-32 workload</td>
+        </tr>
+
+        <tr>
+            <td>load_task_d</td>
+            <td>2</td>
+            <td>100 ms</td>
+            <td>Core 1</td>
+            <td>Insertion-sort workload</td>
+        </tr>
+
+    </table>
+</section>
+
+
+<section id="results">
+    <h2>Performance Results</h2>
+
+    <p>
+        The application measures the time between the ISR timestamp and the
+        execution of the corresponding bottom-half task.
+    </p>
+
+    <div class="results">
+
+        <div class="result">
+            <h3>Direct Notification</h3>
+            <strong>30 µs</strong>
+            <p>Measured response latency</p>
+        </div>
+
+        <div class="result">
+            <h3>Binary Semaphore</h3>
+            <strong>2117 µs</strong>
+            <p>Measured response latency</p>
+        </div>
+
+    </div>
+
+    <h3>Interpretation</h3>
+
+    <p>
+        The measured results showed a significantly lower response latency for
+        the direct task-notification path than for the binary semaphore path.
+        This demonstrates that the synchronization mechanism used between an
+        ISR and a task can affect real-time response performance.
+    </p>
+</section>
+
+
+<section id="failure">
+    <h2>Induced Failure</h2>
+
+    <h3>Removing the ISR Context Switch</h3>
+
+    <p>
+        The application can be used to demonstrate the effect of removing the
+        ISR-triggered context switch. The relevant statement is:
+    </p>
+
+    <pre><code>portYIELD_FROM_ISR(higher_woken);</code></pre>
+
+    <p>
+        When this operation is disabled, the ISR can still signal the waiting
+        task, but the higher-priority task is not immediately scheduled as part
+        of the ISR exit. This can increase the response latency of the
+        bottom-half task.
+    </p>
+
+    <h3>Failure Result</h3>
+
+    <p>
+        The induced failure demonstrated that the system could continue to
+        function while its real-time response became worse. This is important
+        because a real-time system can produce the correct functional result
+        while still violating its timing requirements.
+    </p>
+
+    <div class="warning">
+        <strong>Measured failure result:</strong>
+
+        <p>
+            Add the exact latency measured during the induced-failure
+            experiment here.
+        </p>
+    </div>
+</section>
+
+
+<section id="reflection">
+    <h2>Engineering Reflection</h2>
+
+    <h3>What Would I Do Differently?</h3>
+
+    <p>
+        If I were to do this project again, I would spend more time planning and
+        testing each part of the system before putting everything together. I
+        found that small changes to task priorities, timing, and the way tasks
+        communicate can have a noticeable effect on the system's behavior. I
+        would also collect more measurements during testing so I could compare
+        the different configurations more reliably instead of relying on only
+        a few observations.
+    </p>
+
+
+    <h3>What Was Harder Than Expected?</h3>
+
+    <p>
+        The hardest part was understanding how the different parts of the real-time system interacted with each other. The ISR itself was relatively straightforward, but understanding how the ISR communicates with the FreeRTOS tasks and how task priorities and CPU load affect response time was more difficult. It was especially interesting to see that the system could still function while its timing performance became worse under certain conditions.
+    </p>
+
+
+    <h3>What Was the Most Valuable Thing I Learned?</h3>
+
+    <p>
+        The most valuable thing I learned was that in a real-time system,
+        getting the correct result is only part of the problem. <strong>When</strong>
+        the result occurs can be just as important. This project helped me
+        understand why interrupts should be kept short, why work is often moved
+        into tasks, and how task priorities and synchronization methods affect
+        system responsiveness. I think this is something I will carry into
+        future embedded systems projects because it changes how I think about
+        both designing and testing software.
+    </p>
+
+</section>
+
+
+<section>
+    <h2>Project Files</h2>
+
+    <p>
+        The complete Application 3 source code and supporting project files
+        are available in this GitHub repository.
+    </p>
+
+    <p>
+        <a href="main.c">View Application 3 Source Code</a>
+    </p>
+
+    <p>
+        <a href="README.md">View Repository README</a>
+    </p>
+
+</section>
+
+</main>
+
+
+<footer>
+    <p>EEE 4775 — Application 3 — ESP32-S3 / FreeRTOS</p>
+</footer>
+
+</body>
+</html>
